@@ -1,0 +1,7 @@
+2026-08-17 13:51:48 [INFO] BrainSync started - WEB
+2026-08-17 13:51:48 [INFO] Config: D:\users\Brainer\gitHub\BrainSync\configs\LAB.json
+2026-08-17 13:51:48 [INFO] No upstream source configured. Using local source.
+2026-08-17 13:51:48 [INFO] Updating local tools from: D:\BrainSyncLab\WEB\source
+2026-08-17 13:51:48 [INFO] Updating Braintools: 1.4 -> 1.5
+2026-08-17 13:51:48 [INFO] Braintools updated successfully to 1.5
+2026-08-17 13:51:48 [INFO] BrainSync completed successfully.

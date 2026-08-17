@@ -1,0 +1,9 @@
+2026-08-17 13:53:26 [INFO] BrainSync started - TP
+2026-08-17 13:53:26 [INFO] Config: D:\users\Brainer\gitHub\BrainSync\configs\LAB.json
+2026-08-17 13:53:26 [INFO] Refreshing local source from: D:\BrainSyncLab\APP\source
+2026-08-17 13:53:26 [INFO] Updating Braintools source: 1.4 -> 20260817_120000
+2026-08-17 13:53:26 [INFO] Braintools source updated successfully to 20260817_120000
+2026-08-17 13:53:26 [INFO] Updating local tools from: D:\BrainSyncLab\TP\source
+2026-08-17 13:53:26 [INFO] Updating Braintools: 1.4 -> 20260817_120000
+2026-08-17 13:53:26 [INFO] Braintools updated successfully to 20260817_120000
+2026-08-17 13:53:26 [INFO] BrainSync completed successfully.

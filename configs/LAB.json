@@ -1,0 +1,24 @@
+{
+  "Tools": [
+    "Braintools"
+  ],
+
+  "Computers": {
+    "WEB": {
+      "LocalSource": "D:\\BrainSyncLab\\WEB\\source",
+      "LocalDestination": "D:\\BrainSyncLab\\WEB\\tools"
+    },
+
+    "APP": {
+      "UpstreamSource": "D:\\BrainSyncLab\\WEB\\source",
+      "LocalSource": "D:\\BrainSyncLab\\APP\\source",
+      "LocalDestination": "D:\\BrainSyncLab\\APP\\tools"
+    },
+
+    "TP": {
+      "UpstreamSource": "D:\\BrainSyncLab\\APP\\source",
+      "LocalSource": "D:\\BrainSyncLab\\TP\\source",
+      "LocalDestination": "D:\\BrainSyncLab\\TP\\tools"
+    }
+  }
+}
