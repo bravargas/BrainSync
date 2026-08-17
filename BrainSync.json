@@ -1,0 +1,9 @@
+{
+    "Tools": [
+        {
+            "Name": "Braintools",
+            "Source": "D:\\BrainSyncLab\\SOURCE\\Braintools",
+            "Destination": "D:\\BrainSyncLab\\APP\\Braintools"
+        }
+    ]
+}
