@@ -279,12 +279,10 @@ if (-not (Test-Path -LiteralPath $LogDirectory -PathType Container)) {
         Out-Null
 }
 
-$LogName = "BrainSync_{0}_{1}.log" -f `
-    $ComputerName,
-    (Get-Date -Format "yyyyMMdd_HHmmss")
-
+$LogName = "BrainSync_$ComputerName.log"
 $Script:LogFile = Join-Path $LogDirectory $LogName
 
+Write-Log "------------------------------------------------------------"
 Write-Log "BrainSync started - $ComputerName"
 Write-Log "Config: $($ResolvedConfigPath.Path)"
 
@@ -309,6 +307,8 @@ try {
 catch {
 
     Write-Log "Failed to resolve LocalRepository: $($_.Exception.Message)" "ERROR"
+    Write-Log "BrainSync completed with errors." "ERROR"
+    Write-Log "------------------------------------------------------------"
     exit 1
 }
 
@@ -330,6 +330,8 @@ if ($ComputerConfig.DestinationRoot) {
     catch {
 
         Write-Log "Failed to resolve DestinationRoot: $($_.Exception.Message)" "ERROR"
+        Write-Log "BrainSync completed with errors." "ERROR"
+        Write-Log "------------------------------------------------------------"
         exit 1
     }
 }
@@ -434,8 +436,10 @@ foreach ($Tool in $config.Tools) {
 if ($Script:HadErrors) {
 
     Write-Log "BrainSync completed with errors." "ERROR"
+    Write-Log "------------------------------------------------------------"
     exit 1
 }
 
 Write-Log "BrainSync completed successfully."
+Write-Log "------------------------------------------------------------"
 exit 0
