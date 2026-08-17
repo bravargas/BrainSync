@@ -164,6 +164,7 @@ function Update-VersionedFolder {
         if (Test-Path -LiteralPath $Backup -PathType Container) {
 
             try {
+
                 Rename-Item `
                     -LiteralPath $Backup `
                     -NewName $Destination `
@@ -172,7 +173,10 @@ function Update-VersionedFolder {
                 Write-Log "Previous version of $Name restored."
             }
             catch {
-                Write-Log "Failed to restore previous version of $Name`: $($_.Exception.Message)" "ERROR"
+
+                Write-Log `
+                    "Failed to restore previous version of $Name`: $($_.Exception.Message)" `
+                    "ERROR"
             }
         }
     }
@@ -191,7 +195,7 @@ $ScriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 # ------------------------------------------------------------
 
 if ([string]::IsNullOrWhiteSpace($ConfigFile)) {
-    throw "ConfigFile is required. Example: -ConfigFile .\configs\LAB.json"
+    throw "ConfigFile is required. Example: -ConfigFile .\configs\DEV.json"
 }
 
 
@@ -281,35 +285,59 @@ $LogName = "BrainSync_{0}_{1}.log" -f `
 
 $Script:LogFile = Join-Path $LogDirectory $LogName
 
-
 Write-Log "BrainSync started - $ComputerName"
 Write-Log "Config: $($ResolvedConfigPath.Path)"
 
 
 # ------------------------------------------------------------
-# Resolve paths
+# Resolve local repository
+# Computer-level value overrides global value
 # ------------------------------------------------------------
+
+$LocalRepositoryValue = $config.LocalRepository
+
+if ($ComputerConfig.LocalRepository) {
+    $LocalRepositoryValue = $ComputerConfig.LocalRepository
+}
 
 try {
 
-    $LocalSource = Resolve-ConfiguredPath `
-        -PathValue $ComputerConfig.LocalSource `
-        -BasePath $ConfigDirectory
-
-    $LocalDestination = Resolve-ConfiguredPath `
-        -PathValue $ComputerConfig.LocalDestination `
+    $LocalRepository = Resolve-ConfiguredPath `
+        -PathValue $LocalRepositoryValue `
         -BasePath $ConfigDirectory
 }
 catch {
 
-    Write-Log "Failed to resolve configured paths: $($_.Exception.Message)" "ERROR"
+    Write-Log "Failed to resolve LocalRepository: $($_.Exception.Message)" "ERROR"
     exit 1
 }
 
 
 # ------------------------------------------------------------
+# Resolve optional DestinationRoot override
+# ------------------------------------------------------------
+
+$DestinationRoot = $null
+
+if ($ComputerConfig.DestinationRoot) {
+
+    try {
+
+        $DestinationRoot = Resolve-ConfiguredPath `
+            -PathValue $ComputerConfig.DestinationRoot `
+            -BasePath $ConfigDirectory
+    }
+    catch {
+
+        Write-Log "Failed to resolve DestinationRoot: $($_.Exception.Message)" "ERROR"
+        exit 1
+    }
+}
+
+
+# ------------------------------------------------------------
 # STEP 1
-# Refresh local source from upstream when configured
+# Refresh local repository from upstream when configured
 # ------------------------------------------------------------
 
 if ($ComputerConfig.UpstreamSource) {
@@ -320,12 +348,19 @@ if ($ComputerConfig.UpstreamSource) {
             -PathValue $ComputerConfig.UpstreamSource `
             -BasePath $ConfigDirectory
 
-        Write-Log "Refreshing local source from: $UpstreamSource"
+        Write-Log "Refreshing local repository from: $UpstreamSource"
 
-        foreach ($ToolName in $config.Tools) {
+        foreach ($Tool in $config.Tools) {
+
+            $ToolName = $Tool.Name
+
+            if ([string]::IsNullOrWhiteSpace($ToolName)) {
+                Write-Log "Tool entry is missing Name." "ERROR"
+                continue
+            }
 
             $Source = Join-Path $UpstreamSource $ToolName
-            $Destination = Join-Path $LocalSource $ToolName
+            $Destination = Join-Path $LocalRepository $ToolName
 
             Update-VersionedFolder `
                 -Name "$ToolName source" `
@@ -335,30 +370,60 @@ if ($ComputerConfig.UpstreamSource) {
     }
     catch {
 
-        Write-Log "Failed while refreshing local source: $($_.Exception.Message)" "ERROR"
+        Write-Log "Failed while refreshing local repository: $($_.Exception.Message)" "ERROR"
     }
 }
 else {
-    Write-Log "No upstream source configured. Using local source."
+
+    Write-Log "No upstream source configured. Using local repository."
 }
 
 
 # ------------------------------------------------------------
 # STEP 2
-# Update operational tools from local source
+# Update operational tools from local repository
 # ------------------------------------------------------------
 
-Write-Log "Updating local tools from: $LocalSource"
+Write-Log "Updating local tools from: $LocalRepository"
 
-foreach ($ToolName in $config.Tools) {
+foreach ($Tool in $config.Tools) {
 
-    $Source = Join-Path $LocalSource $ToolName
-    $Destination = Join-Path $LocalDestination $ToolName
+    $ToolName = $Tool.Name
 
-    Update-VersionedFolder `
-        -Name $ToolName `
-        -Source $Source `
-        -Destination $Destination
+    if ([string]::IsNullOrWhiteSpace($ToolName)) {
+        Write-Log "Tool entry is missing Name." "ERROR"
+        continue
+    }
+
+    try {
+
+        $Source = Join-Path $LocalRepository $ToolName
+
+        if ($DestinationRoot) {
+
+            $Destination = Join-Path $DestinationRoot $ToolName
+        }
+        else {
+
+            if ([string]::IsNullOrWhiteSpace($Tool.Destination)) {
+                Write-Log "Destination is missing for tool: $ToolName" "ERROR"
+                continue
+            }
+
+            $Destination = Resolve-ConfiguredPath `
+                -PathValue $Tool.Destination `
+                -BasePath $ConfigDirectory
+        }
+
+        Update-VersionedFolder `
+            -Name $ToolName `
+            -Source $Source `
+            -Destination $Destination
+    }
+    catch {
+
+        Write-Log "Failed to process $ToolName`: $($_.Exception.Message)" "ERROR"
+    }
 }
 
 
