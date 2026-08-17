@@ -4,32 +4,24 @@
         {
             "Name": "Braintools",
             "Destination": "D:\\fiservsoftware\\powershell\\Braintools"
-        },
-        {
-            "Name": "BrainPad",
-            "Destination": "D:\\fiservsoftware\\powershell\\BrainPad"
-        },
-        {
-            "Name": "BrainTrace",
-            "Destination": "D:\\fiservsoftware\\powershell\\BrainTrace"
         }
     ],
     "Computers": {
         "VSMOBWEBDEV05": {},
         "VSMOBWEBDEV06": {
-            "UpstreamSource": "\\\\vsmobwebdev05\\d$\\fiservsoftware\\powershell-source"
+            "UpstreamSource": "\\\\vsmobwebdev05\\fiservsoftware$\\powershell-source"
         },
         "VSMOBAPPDEV03": {
-            "UpstreamSource": "\\\\vsmobwebdev05\\d$\\fiservsoftware\\powershell-source"
+            "UpstreamSource": "\\\\vsmobwebdev05\\fiservsoftware$\\powershell-source"
         },
         "VSMOBAPPDEV04": {
-            "UpstreamSource": "\\\\vsmobappdev03\\d$\\fiservsoftware\\powershell-source"
+            "UpstreamSource": "\\\\vsmobappdev03\\fiservsoftware$\\powershell-source"
         },
         "VSCORAPPDEV01": {
-            "UpstreamSource": "\\\\vsmobappdev03\\d$\\fiservsoftware\\powershell-source"
+            "UpstreamSource": "\\\\vsmobappdev03\\fiservsoftware$\\powershell-source"
         },
         "VSCORAPPDEV02": {
-            "UpstreamSource": "\\\\vscorappdev01\\d$\\fiservsoftware\\powershell-source"
+            "UpstreamSource": "\\\\vscorappdev01\\fiservsoftware$\\powershell-source"
         }
     }
 }
