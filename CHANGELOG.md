@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Added configurable logging modes through the `LogMode` environment setting.
+- Added `ChangesOnly` logging mode to persist logs only when an install, update, warning, or error occurs.
+- Added `All` logging mode for verbose execution logging, primarily intended for lab testing and troubleshooting.
+- Changed the default logging behavior to `ChangesOnly` to prevent unnecessary log growth when BrainSync runs frequently with no changes.
+- Changed logging to buffer each execution in memory and write the complete run to the log only when relevant activity occurs.
 - Fixed path resolution in [BrainSync.ps1](BrainSync.ps1) so configured paths are resolved relative to the config file location instead of the current working directory.
 - Added validation for missing source folders, missing source `version.txt` files, and empty version markers before attempting an update.
 - Added timestamped incremental logging with one log file per computer under the `logs` folder.

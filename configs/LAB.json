@@ -1,4 +1,5 @@
 {
+  "LogMode": "All",
   "LocalRepository": "D:\\BrainSyncLab\\WEB\\source",
   "DestinationRoot": "D:\\BrainSyncLab\\WEB\\tools",
   "Computers": {

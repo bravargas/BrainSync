@@ -1,4 +1,5 @@
 {
+    "LogMode": "ChangesOnly",
     "LocalRepository": "D:\\fiservsoftware\\powershell-source",
     "DestinationRoot": "D:\\fiservsoftware\\powershell",
     "Computers": {

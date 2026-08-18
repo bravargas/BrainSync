@@ -4,7 +4,10 @@ param (
 )
 
 $Script:HadErrors = $false
+$Script:RelevantActivity = $false
 $Script:LogFile = $null
+$Script:LogMode = "ChangesOnly"
+$Script:LogBuffer = [System.Collections.Generic.List[string]]::new()
 
 
 function Write-Log {
@@ -13,7 +16,9 @@ function Write-Log {
         [string]$Message,
 
         [ValidateSet("INFO", "WARNING", "ERROR")]
-        [string]$Level = "INFO"
+        [string]$Level = "INFO",
+
+        [switch]$Relevant
     )
 
     $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -21,13 +26,55 @@ function Write-Log {
 
     Write-Host $Line
 
-    if ($Script:LogFile) {
-        Add-Content -LiteralPath $Script:LogFile -Value $Line
+    $Script:LogBuffer.Add($Line)
+
+    if ($Relevant -or $Level -in @("WARNING", "ERROR")) {
+        $Script:RelevantActivity = $true
     }
 
     if ($Level -eq "ERROR") {
         $Script:HadErrors = $true
     }
+}
+
+
+function Save-Log {
+    $ShouldWrite = (
+        $Script:LogMode -eq "All" -or
+        $Script:RelevantActivity
+    )
+
+    if (-not $ShouldWrite) {
+        return
+    }
+
+    if (-not $Script:LogFile) {
+        return
+    }
+
+    Add-Content `
+        -LiteralPath $Script:LogFile `
+        -Value $Script:LogBuffer
+}
+
+
+function Complete-BrainSync {
+    param(
+        [int]$ExitCode
+    )
+
+    if ($ExitCode -eq 0) {
+        Write-Log "BrainSync completed successfully."
+    }
+    else {
+        Write-Log "BrainSync completed with errors." "ERROR"
+    }
+
+    Write-Log "------------------------------------------------------------"
+
+    Save-Log
+
+    exit $ExitCode
 }
 
 
@@ -143,16 +190,23 @@ function Update-VersionedFolder {
     $SourceFullPath = [System.IO.Path]::GetFullPath($Source)
     $DestinationFullPath = [System.IO.Path]::GetFullPath($Destination)
 
-    if ($SourceFullPath.TrimEnd('\') -eq $DestinationFullPath.TrimEnd('\')) {
-        Write-Log "Source and destination are the same path for $Name`: $Source" "ERROR"
+    if (
+        $SourceFullPath.TrimEnd('\') -eq
+        $DestinationFullPath.TrimEnd('\')
+    ) {
+        Write-Log `
+            "Source and destination are the same path for $Name`: $Source" `
+            "ERROR"
         return
     }
 
     if ([string]::IsNullOrWhiteSpace($DestinationVersion)) {
-        Write-Log "Installing $Name version $SourceVersion"
+        Write-Log "Installing $Name version $SourceVersion" -Relevant
     }
     else {
-        Write-Log "Updating $Name`: $DestinationVersion -> $SourceVersion"
+        Write-Log `
+            "Updating $Name`: $DestinationVersion -> $SourceVersion" `
+            -Relevant
     }
 
     $Backup = "$Destination.backup"
@@ -180,7 +234,7 @@ function Update-VersionedFolder {
             -ErrorAction Stop |
             Out-Null
 
-        # Copy everything except version.txt.
+        # Copy all package content except version.txt.
         # version.txt is copied last and acts as the completed-release marker.
         Get-ChildItem `
             -LiteralPath $Source `
@@ -199,6 +253,7 @@ function Update-VersionedFolder {
                 -ErrorAction Stop
         }
 
+        # Copy release marker last
         Copy-Item `
             -LiteralPath $SourceVersionFile `
             -Destination (Join-Path $Destination $VersionFileName) `
@@ -217,11 +272,15 @@ function Update-VersionedFolder {
             -Force `
             -ErrorAction SilentlyContinue
 
-        Write-Log "$Name updated successfully to $SourceVersion"
+        Write-Log `
+            "$Name updated successfully to $SourceVersion" `
+            -Relevant
     }
     catch {
 
-        Write-Log "Update failed for $Name`: $($_.Exception.Message)" "ERROR"
+        Write-Log `
+            "Update failed for $Name`: $($_.Exception.Message)" `
+            "ERROR"
 
         Remove-Item `
             -LiteralPath $Destination `
@@ -238,7 +297,9 @@ function Update-VersionedFolder {
                     -NewName $Destination `
                     -ErrorAction Stop
 
-                Write-Log "Previous version of $Name restored."
+                Write-Log `
+                    "Previous version of $Name restored." `
+                    -Relevant
             }
             catch {
 
@@ -316,6 +377,20 @@ $ConfigDirectory = Split-Path -Parent $ResolvedConfigPath.Path
 
 
 # ------------------------------------------------------------
+# Resolve LogMode
+# ------------------------------------------------------------
+
+if ($config.LogMode) {
+
+    if ($config.LogMode -notin @("All", "ChangesOnly")) {
+        throw "Invalid LogMode '$($config.LogMode)'. Valid values: All, ChangesOnly."
+    }
+
+    $Script:LogMode = $config.LogMode
+}
+
+
+# ------------------------------------------------------------
 # Resolve computer configuration
 # ------------------------------------------------------------
 
@@ -353,6 +428,7 @@ $Script:LogFile = Join-Path $LogDirectory $LogName
 Write-Log "------------------------------------------------------------"
 Write-Log "BrainSync started - $ComputerName"
 Write-Log "Config: $($ResolvedConfigPath.Path)"
+Write-Log "Log mode: $Script:LogMode"
 
 
 # ------------------------------------------------------------
@@ -374,10 +450,11 @@ try {
 }
 catch {
 
-    Write-Log "Failed to resolve LocalRepository: $($_.Exception.Message)" "ERROR"
-    Write-Log "BrainSync completed with errors." "ERROR"
-    Write-Log "------------------------------------------------------------"
-    exit 1
+    Write-Log `
+        "Failed to resolve LocalRepository: $($_.Exception.Message)" `
+        "ERROR"
+
+    Complete-BrainSync -ExitCode 1
 }
 
 
@@ -400,10 +477,11 @@ try {
 }
 catch {
 
-    Write-Log "Failed to resolve DestinationRoot: $($_.Exception.Message)" "ERROR"
-    Write-Log "BrainSync completed with errors." "ERROR"
-    Write-Log "------------------------------------------------------------"
-    exit 1
+    Write-Log `
+        "Failed to resolve DestinationRoot: $($_.Exception.Message)" `
+        "ERROR"
+
+    Complete-BrainSync -ExitCode 1
 }
 
 
@@ -422,10 +500,14 @@ if ($ComputerConfig.UpstreamSource) {
 
         Write-Log "Refreshing local repository from: $UpstreamSource"
 
-        $UpstreamTools = Get-VersionedFolders -Repository $UpstreamSource
+        $UpstreamTools = Get-VersionedFolders `
+            -Repository $UpstreamSource
 
         if ($UpstreamTools.Count -eq 0) {
-            Write-Log "No versioned folders found in upstream source: $UpstreamSource" "WARNING"
+
+            Write-Log `
+                "No versioned folders found in upstream source: $UpstreamSource" `
+                "WARNING"
         }
 
         foreach ($Tool in $UpstreamTools) {
@@ -441,7 +523,9 @@ if ($ComputerConfig.UpstreamSource) {
     }
     catch {
 
-        Write-Log "Failed while refreshing local repository: $($_.Exception.Message)" "ERROR"
+        Write-Log `
+            "Failed while refreshing local repository: $($_.Exception.Message)" `
+            "ERROR"
     }
 }
 else {
@@ -459,10 +543,14 @@ Write-Log "Discovering tools in local repository: $LocalRepository"
 
 try {
 
-    $LocalTools = Get-VersionedFolders -Repository $LocalRepository
+    $LocalTools = Get-VersionedFolders `
+        -Repository $LocalRepository
 
     if ($LocalTools.Count -eq 0) {
-        Write-Log "No versioned folders found in local repository: $LocalRepository" "WARNING"
+
+        Write-Log `
+            "No versioned folders found in local repository: $LocalRepository" `
+            "WARNING"
     }
 
     foreach ($Tool in $LocalTools) {
@@ -478,7 +566,9 @@ try {
 }
 catch {
 
-    Write-Log "Failed while updating local tools: $($_.Exception.Message)" "ERROR"
+    Write-Log `
+        "Failed while updating local tools: $($_.Exception.Message)" `
+        "ERROR"
 }
 
 
@@ -487,12 +577,7 @@ catch {
 # ------------------------------------------------------------
 
 if ($Script:HadErrors) {
-
-    Write-Log "BrainSync completed with errors." "ERROR"
-    Write-Log "------------------------------------------------------------"
-    exit 1
+    Complete-BrainSync -ExitCode 1
 }
 
-Write-Log "BrainSync completed successfully."
-Write-Log "------------------------------------------------------------"
-exit 0
+Complete-BrainSync -ExitCode 0
