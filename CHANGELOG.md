@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Modularized BrainSync into dedicated components under `src/`: [Logging.ps1](src/Logging.ps1), [Mutex.ps1](src/Mutex.ps1), [Config.ps1](src/Config.ps1), and [Sync.ps1](src/Sync.ps1), while keeping [BrainSync.ps1](BrainSync.ps1) as the concise entrypoint orchestrator.
 - Added automatic recovery for interrupted updates left incomplete by process termination, system restart, or power loss.
 - BrainSync now detects incomplete destinations with an existing backup and restores the previous valid release automatically.
 - Added stale backup cleanup when a previous update completed successfully but terminated before backup removal.
