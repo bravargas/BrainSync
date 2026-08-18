@@ -8,6 +8,7 @@ $Folders = @(
     "$Lab\WEB\source\Braintools",
     "$Lab\WEB\source\BrainPad",
     "$Lab\WEB\source\BrainTrace",
+    "$Lab\WEB\source\BrainSync",
 
     "$Lab\WEB\tools",
 
@@ -36,6 +37,9 @@ foreach ($Folder in $Folders) {
 "20260817-210003" |
     Set-Content "$Lab\WEB\source\BrainTrace\version.txt"
 
+"20260818-100000" |
+    Set-Content "$Lab\WEB\source\BrainSync\version.txt"
+
 
 # ------------------------------------------------------------
 # Fake package content
@@ -49,6 +53,12 @@ foreach ($Folder in $Folders) {
 
 "'BrainTrace LAB package'" |
     Set-Content "$Lab\WEB\source\BrainTrace\BrainTrace.ps1"
+
+# Copy real BrainSync files for authentic engine package
+$WorkspaceRoot = Split-Path -Parent $PSScriptRoot
+Copy-Item "$WorkspaceRoot\BrainSync.ps1" "$Lab\WEB\source\BrainSync\BrainSync.ps1" -Force
+Copy-Item "$WorkspaceRoot\src" "$Lab\WEB\source\BrainSync\src" -Recurse -Force
+Copy-Item "$WorkspaceRoot\configs" "$Lab\WEB\source\BrainSync\configs" -Recurse -Force
 
 
 # Additional files/folders to verify recursive copying
@@ -70,3 +80,4 @@ Write-Host "Discovered packages will be:"
 Write-Host "  Braintools"
 Write-Host "  BrainPad"
 Write-Host "  BrainTrace"
+Write-Host "  BrainSync"

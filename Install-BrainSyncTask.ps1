@@ -9,10 +9,16 @@ param (
 )
 
 $ScriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+$LauncherScript = Join-Path $ScriptDirectory "Run-BrainSync.ps1"
 $BrainSyncScript = Join-Path $ScriptDirectory "BrainSync.ps1"
 
-if (-not (Test-Path -LiteralPath $BrainSyncScript -PathType Leaf)) {
-    throw "BrainSync.ps1 not found: $BrainSyncScript"
+$TargetScript = $BrainSyncScript
+if (Test-Path -LiteralPath $LauncherScript -PathType Leaf) {
+    $TargetScript = $LauncherScript
+}
+
+if (-not (Test-Path -LiteralPath $TargetScript -PathType Leaf)) {
+    throw "Script not found: $TargetScript"
 }
 
 # Resolve config file
@@ -32,7 +38,7 @@ catch {
 
 $ConfigPath = $ResolvedConfig.Path
 
-$Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$BrainSyncScript`" -ConfigFile `"$ConfigPath`""
+$Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$TargetScript`" -ConfigFile `"$ConfigPath`""
 
 $Action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `

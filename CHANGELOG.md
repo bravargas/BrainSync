@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Added [Run-BrainSync.ps1](Run-BrainSync.ps1) as a lightweight, immutable Bootstrap Launcher that detects and self-updates the core BrainSync engine from upstream/local repositories before executing the main synchronizer.
+- BrainSync can now be published and synchronized as its own versioned package (`BrainSync`) without encountering Windows file-lock issues during execution.
+- Added self-update logging directly into the computer log (`logs/BrainSync_<ComputerName>.log`), preserving continuous execution history.
+- Updated [Install-BrainSyncTask.ps1](Install-BrainSyncTask.ps1) to register the Windows Scheduled Task pointing to [Run-BrainSync.ps1](Run-BrainSync.ps1) as the default entry point.
 - Added high-performance and network-resilient package copying powered by `Robocopy.exe` with automatic restartable mode (`/Z`), network timestamp tolerance (`/FFT`), retry policies (`/R:3 /W:2`), and seamless fallback to `Copy-Item`.
 - Added transient file-lock tolerance with exponential/pause retry policies (`Invoke-WithRetry`) for backup and restore operations during live deployments.
 - Added automatic log retention and purge mechanism (`LogRetentionDays`, default 30 days) to prevent unbounded log growth.
