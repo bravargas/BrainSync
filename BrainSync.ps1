@@ -86,18 +86,21 @@ function Update-VersionedFolder {
         [string]$Destination
     )
 
+    $VersionFileName = "version.txt"
+
     if (-not (Test-Path -LiteralPath $Source -PathType Container)) {
         Write-Log "Source folder not found: $Source" "ERROR"
         return
     }
 
-    $SourceVersion = Get-ToolVersion -Path $Source
+    $SourceVersionFile = Join-Path $Source $VersionFileName
 
-    if (-not $SourceVersion) {
+    if (-not (Test-Path -LiteralPath $SourceVersionFile -PathType Leaf)) {
         Write-Log "version.txt not found in source: $Source" "ERROR"
         return
     }
 
+    $SourceVersion = Get-ToolVersion -Path $Source
     $DestinationVersion = Get-ToolVersion -Path $Destination
 
     if ($SourceVersion -eq $DestinationVersion) {
@@ -130,10 +133,36 @@ function Update-VersionedFolder {
                 -ErrorAction Stop
         }
 
-        Copy-Item `
+        New-Item `
+            -ItemType Directory `
+            -Path $Destination `
+            -Force `
+            -ErrorAction Stop |
+            Out-Null
+
+        # Copy everything except version.txt
+        Get-ChildItem `
             -LiteralPath $Source `
-            -Destination $Destination `
-            -Recurse `
+            -Force `
+            -ErrorAction Stop |
+            Where-Object {
+                $_.Name -ne $VersionFileName
+            } |
+            ForEach-Object {
+
+                Copy-Item `
+                    -LiteralPath $_.FullName `
+                    -Destination $Destination `
+                    -Recurse `
+                    -Force `
+                    -ErrorAction Stop
+            }
+
+        # version.txt is copied last.
+        # Its presence indicates the release finished copying.
+        Copy-Item `
+            -LiteralPath $SourceVersionFile `
+            -Destination (Join-Path $Destination $VersionFileName) `
             -Force `
             -ErrorAction Stop
 
