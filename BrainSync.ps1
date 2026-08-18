@@ -74,6 +74,32 @@ function Get-ToolVersion {
 }
 
 
+function Get-VersionedFolders {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Repository
+    )
+
+    if (-not (Test-Path -LiteralPath $Repository -PathType Container)) {
+        Write-Log "Repository not found: $Repository" "ERROR"
+        return @()
+    }
+
+    return @(
+        Get-ChildItem `
+            -LiteralPath $Repository `
+            -Directory `
+            -Force `
+            -ErrorAction Stop |
+        Where-Object {
+            Test-Path `
+                -LiteralPath (Join-Path $_.FullName "version.txt") `
+                -PathType Leaf
+        }
+    )
+}
+
+
 function Update-VersionedFolder {
     param(
         [Parameter(Mandatory = $true)]
@@ -101,10 +127,24 @@ function Update-VersionedFolder {
     }
 
     $SourceVersion = Get-ToolVersion -Path $Source
+
+    if ([string]::IsNullOrWhiteSpace($SourceVersion)) {
+        Write-Log "version.txt is empty in source: $Source" "ERROR"
+        return
+    }
+
     $DestinationVersion = Get-ToolVersion -Path $Destination
 
     if ($SourceVersion -eq $DestinationVersion) {
         Write-Log "$Name is already version $SourceVersion"
+        return
+    }
+
+    $SourceFullPath = [System.IO.Path]::GetFullPath($Source)
+    $DestinationFullPath = [System.IO.Path]::GetFullPath($Destination)
+
+    if ($SourceFullPath.TrimEnd('\') -eq $DestinationFullPath.TrimEnd('\')) {
+        Write-Log "Source and destination are the same path for $Name`: $Source" "ERROR"
         return
     }
 
@@ -140,26 +180,25 @@ function Update-VersionedFolder {
             -ErrorAction Stop |
             Out-Null
 
-        # Copy everything except version.txt
+        # Copy everything except version.txt.
+        # version.txt is copied last and acts as the completed-release marker.
         Get-ChildItem `
             -LiteralPath $Source `
             -Force `
             -ErrorAction Stop |
-            Where-Object {
-                $_.Name -ne $VersionFileName
-            } |
-            ForEach-Object {
+        Where-Object {
+            $_.Name -ne $VersionFileName
+        } |
+        ForEach-Object {
 
-                Copy-Item `
-                    -LiteralPath $_.FullName `
-                    -Destination $Destination `
-                    -Recurse `
-                    -Force `
-                    -ErrorAction Stop
-            }
+            Copy-Item `
+                -LiteralPath $_.FullName `
+                -Destination $Destination `
+                -Recurse `
+                -Force `
+                -ErrorAction Stop
+        }
 
-        # version.txt is copied last.
-        # Its presence indicates the release finished copying.
         Copy-Item `
             -LiteralPath $SourceVersionFile `
             -Destination (Join-Path $Destination $VersionFileName) `
@@ -288,7 +327,7 @@ $ComputerName = $ComputerName.ToUpper()
 
 $ComputerConfig = $config.Computers.$ComputerName
 
-if (-not $ComputerConfig) {
+if ($null -eq $ComputerConfig) {
     throw "No BrainSync configuration found for computer: $ComputerName"
 }
 
@@ -343,26 +382,28 @@ catch {
 
 
 # ------------------------------------------------------------
-# Resolve optional DestinationRoot override
+# Resolve destination root
+# Computer-level value overrides global value
 # ------------------------------------------------------------
 
-$DestinationRoot = $null
+$DestinationRootValue = $config.DestinationRoot
 
 if ($ComputerConfig.DestinationRoot) {
+    $DestinationRootValue = $ComputerConfig.DestinationRoot
+}
 
-    try {
+try {
 
-        $DestinationRoot = Resolve-ConfiguredPath `
-            -PathValue $ComputerConfig.DestinationRoot `
-            -BasePath $ConfigDirectory
-    }
-    catch {
+    $DestinationRoot = Resolve-ConfiguredPath `
+        -PathValue $DestinationRootValue `
+        -BasePath $ConfigDirectory
+}
+catch {
 
-        Write-Log "Failed to resolve DestinationRoot: $($_.Exception.Message)" "ERROR"
-        Write-Log "BrainSync completed with errors." "ERROR"
-        Write-Log "------------------------------------------------------------"
-        exit 1
-    }
+    Write-Log "Failed to resolve DestinationRoot: $($_.Exception.Message)" "ERROR"
+    Write-Log "BrainSync completed with errors." "ERROR"
+    Write-Log "------------------------------------------------------------"
+    exit 1
 }
 
 
@@ -381,21 +422,20 @@ if ($ComputerConfig.UpstreamSource) {
 
         Write-Log "Refreshing local repository from: $UpstreamSource"
 
-        foreach ($Tool in $config.Tools) {
+        $UpstreamTools = Get-VersionedFolders -Repository $UpstreamSource
+
+        if ($UpstreamTools.Count -eq 0) {
+            Write-Log "No versioned folders found in upstream source: $UpstreamSource" "WARNING"
+        }
+
+        foreach ($Tool in $UpstreamTools) {
 
             $ToolName = $Tool.Name
-
-            if ([string]::IsNullOrWhiteSpace($ToolName)) {
-                Write-Log "Tool entry is missing Name." "ERROR"
-                continue
-            }
-
-            $Source = Join-Path $UpstreamSource $ToolName
             $Destination = Join-Path $LocalRepository $ToolName
 
             Update-VersionedFolder `
                 -Name "$ToolName source" `
-                -Source $Source `
+                -Source $Tool.FullName `
                 -Destination $Destination
         }
     }
@@ -412,49 +452,33 @@ else {
 
 # ------------------------------------------------------------
 # STEP 2
-# Update operational tools from local repository
+# Discover and update operational tools from local repository
 # ------------------------------------------------------------
 
-Write-Log "Updating local tools from: $LocalRepository"
+Write-Log "Discovering tools in local repository: $LocalRepository"
 
-foreach ($Tool in $config.Tools) {
+try {
 
-    $ToolName = $Tool.Name
+    $LocalTools = Get-VersionedFolders -Repository $LocalRepository
 
-    if ([string]::IsNullOrWhiteSpace($ToolName)) {
-        Write-Log "Tool entry is missing Name." "ERROR"
-        continue
+    if ($LocalTools.Count -eq 0) {
+        Write-Log "No versioned folders found in local repository: $LocalRepository" "WARNING"
     }
 
-    try {
+    foreach ($Tool in $LocalTools) {
 
-        $Source = Join-Path $LocalRepository $ToolName
-
-        if ($DestinationRoot) {
-
-            $Destination = Join-Path $DestinationRoot $ToolName
-        }
-        else {
-
-            if ([string]::IsNullOrWhiteSpace($Tool.Destination)) {
-                Write-Log "Destination is missing for tool: $ToolName" "ERROR"
-                continue
-            }
-
-            $Destination = Resolve-ConfiguredPath `
-                -PathValue $Tool.Destination `
-                -BasePath $ConfigDirectory
-        }
+        $ToolName = $Tool.Name
+        $Destination = Join-Path $DestinationRoot $ToolName
 
         Update-VersionedFolder `
             -Name $ToolName `
-            -Source $Source `
+            -Source $Tool.FullName `
             -Destination $Destination
     }
-    catch {
+}
+catch {
 
-        Write-Log "Failed to process $ToolName`: $($_.Exception.Message)" "ERROR"
-    }
+    Write-Log "Failed while updating local tools: $($_.Exception.Message)" "ERROR"
 }
 
 

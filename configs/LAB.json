@@ -1,22 +1,17 @@
 {
   "LocalRepository": "D:\\BrainSyncLab\\WEB\\source",
   "DestinationRoot": "D:\\BrainSyncLab\\WEB\\tools",
-  "Tools": [
-    {
-      "Name": "Braintools"
-    }
-  ],
   "Computers": {
     "WEB": {},
     "APP": {
+      "UpstreamSource": "D:\\BrainSyncLab\\WEB\\source",
       "LocalRepository": "D:\\BrainSyncLab\\APP\\source",
-      "DestinationRoot": "D:\\BrainSyncLab\\APP\\tools",
-      "UpstreamSource": "D:\\BrainSyncLab\\WEB\\source"
+      "DestinationRoot": "D:\\BrainSyncLab\\APP\\tools"
     },
     "TP": {
+      "UpstreamSource": "D:\\BrainSyncLab\\APP\\source",
       "LocalRepository": "D:\\BrainSyncLab\\TP\\source",
-      "DestinationRoot": "D:\\BrainSyncLab\\TP\\tools",
-      "UpstreamSource": "D:\\BrainSyncLab\\APP\\source"
+      "DestinationRoot": "D:\\BrainSyncLab\\TP\\tools"
     }
   }
 }

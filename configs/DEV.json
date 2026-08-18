@@ -1,11 +1,6 @@
 {
     "LocalRepository": "D:\\fiservsoftware\\powershell-source",
-    "Tools": [
-        {
-            "Name": "Braintools",
-            "Destination": "D:\\fiservsoftware\\powershell\\Braintools"
-        }
-    ],
+    "DestinationRoot": "D:\\fiservsoftware\\powershell",
     "Computers": {
         "VSMOBWEBDEV05": {},
         "VSMOBWEBDEV06": {
