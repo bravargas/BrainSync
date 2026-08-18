@@ -6,6 +6,10 @@ $Script:HadErrors = $false
 $Script:RelevantActivity = $false
 $Script:LogFile = $null
 $Script:LogMode = "ChangesOnly"
+$Script:LogRetentionDays = 30
+$Script:EnableEventLog = $true
+$Script:LogDirectory = $null
+$Script:TargetComputerName = $null
 $Script:LogBuffer = [System.Collections.Generic.List[string]]::new()
 
 function Initialize-BrainSyncLogging {
@@ -17,7 +21,11 @@ function Initialize-BrainSyncLogging {
         [string]$ComputerName,
 
         [ValidateSet("All", "ChangesOnly")]
-        [string]$LogMode = "ChangesOnly"
+        [string]$LogMode = "ChangesOnly",
+
+        [int]$LogRetentionDays = 30,
+
+        [bool]$EnableEventLog = $true
     )
 
     if (-not (Test-Path -LiteralPath $LogDirectory -PathType Container)) {
@@ -27,6 +35,11 @@ function Initialize-BrainSyncLogging {
             -Force |
             Out-Null
     }
+
+    $Script:LogDirectory = $LogDirectory
+    $Script:TargetComputerName = $ComputerName
+    $Script:LogRetentionDays = $LogRetentionDays
+    $Script:EnableEventLog = $EnableEventLog
 
     $LogName = "BrainSync_$ComputerName.log"
     $Script:LogFile = Join-Path $LogDirectory $LogName
@@ -89,4 +102,73 @@ function Save-Log {
     Add-Content `
         -LiteralPath $Script:LogFile `
         -Value $Script:LogBuffer
+}
+
+function Remove-OldBrainSyncLogs {
+    param(
+        [string]$LogDirectory = $Script:LogDirectory,
+        [string]$ComputerName = $Script:TargetComputerName,
+        [int]$RetentionDays = $Script:LogRetentionDays
+    )
+
+    if ([string]::IsNullOrWhiteSpace($LogDirectory) -or -not (Test-Path -LiteralPath $LogDirectory -PathType Container)) {
+        return
+    }
+
+    if ($RetentionDays -le 0) {
+        return
+    }
+
+    $CutoffDate = (Get-Date).AddDays(-$RetentionDays)
+
+    try {
+        $Filter = "BrainSync_*.log"
+        if (-not [string]::IsNullOrWhiteSpace($ComputerName)) {
+            $Filter = "BrainSync_$ComputerName*.log"
+        }
+
+        Get-ChildItem -LiteralPath $LogDirectory -Filter $Filter -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTime -lt $CutoffDate } |
+            ForEach-Object {
+                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+            }
+    }
+    catch {
+        # Silently continue on cleanup errors
+    }
+}
+
+function Write-BrainSyncEventLog {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
+
+        [ValidateSet("Information", "Warning", "Error")]
+        [string]$EntryType = "Information",
+
+        [int]$EventId = 100
+    )
+
+    if (-not $Script:EnableEventLog) {
+        return
+    }
+
+    $Source = "BrainSync"
+    $LogName = "Application"
+
+    try {
+        if (-not [System.Diagnostics.EventLog]::SourceExists($Source)) {
+            try {
+                [System.Diagnostics.EventLog]::CreateEventSource($Source, $LogName)
+            }
+            catch {
+                $Source = "Application"
+            }
+        }
+
+        [System.Diagnostics.EventLog]::WriteEntry($Source, $Message, [System.Diagnostics.EventLogEntryType]::$EntryType, $EventId)
+    }
+    catch {
+        # Silently ignore event log write failures on non-privileged environments
+    }
 }

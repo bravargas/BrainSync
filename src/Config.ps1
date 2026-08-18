@@ -107,6 +107,39 @@ function Get-BrainSyncConfig {
     }
 
     # --------------------------------------------------------
+    # Resolve LogRetentionDays (default: 30)
+    # --------------------------------------------------------
+    $LogRetentionDays = 30
+    if ($null -ne $rawConfig.LogRetentionDays) {
+        $LogRetentionDays = [int]$rawConfig.LogRetentionDays
+    }
+    if ($null -ne $ComputerConfig.LogRetentionDays) {
+        $LogRetentionDays = [int]$ComputerConfig.LogRetentionDays
+    }
+
+    # --------------------------------------------------------
+    # Resolve EnableEventLog (default: true)
+    # --------------------------------------------------------
+    $EnableEventLog = $true
+    if ($null -ne $rawConfig.EnableEventLog) {
+        $EnableEventLog = [bool]$rawConfig.EnableEventLog
+    }
+    if ($null -ne $ComputerConfig.EnableEventLog) {
+        $EnableEventLog = [bool]$ComputerConfig.EnableEventLog
+    }
+
+    # --------------------------------------------------------
+    # Resolve UseRobocopy (default: true)
+    # --------------------------------------------------------
+    $UseRobocopy = $true
+    if ($null -ne $rawConfig.UseRobocopy) {
+        $UseRobocopy = [bool]$rawConfig.UseRobocopy
+    }
+    if ($null -ne $ComputerConfig.UseRobocopy) {
+        $UseRobocopy = [bool]$ComputerConfig.UseRobocopy
+    }
+
+    # --------------------------------------------------------
     # Resolve LocalRepository
     # --------------------------------------------------------
     $LocalRepositoryValue = $rawConfig.LocalRepository
@@ -152,6 +185,9 @@ function Get-BrainSyncConfig {
         ResolvedConfigPath = $ResolvedConfigPath
         ConfigDirectory    = $ConfigDirectory
         LogMode            = $LogMode
+        LogRetentionDays   = $LogRetentionDays
+        EnableEventLog     = $EnableEventLog
+        UseRobocopy        = $UseRobocopy
         ComputerName       = $NormalizedComputerName
         ComputerConfig     = $ComputerConfig
         LocalRepository    = $LocalRepository

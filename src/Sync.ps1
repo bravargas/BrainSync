@@ -2,6 +2,103 @@
 # BrainSync - Synchronization & Package Management Module
 # ------------------------------------------------------------
 
+function Invoke-WithRetry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$ScriptBlock,
+
+        [int]$MaxAttempts = 3,
+        [int]$DelaySeconds = 1,
+        [string]$ErrorMessage = "Operation failed"
+    )
+
+    $Attempt = 0
+    while ($Attempt -lt $MaxAttempts) {
+        $Attempt++
+        try {
+            return (& $ScriptBlock)
+        }
+        catch {
+            if ($Attempt -ge $MaxAttempts) {
+                throw "$ErrorMessage`: $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+}
+
+
+function Copy-PackageContent {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Source,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Destination,
+
+        [string]$ExcludeFile = "version.txt",
+        [bool]$UseRobocopy = $true
+    )
+
+    $RobocopyCmd = Get-Command "robocopy.exe" -ErrorAction SilentlyContinue
+
+    if ($UseRobocopy -and $RobocopyCmd) {
+        $RobocopyArgs = @(
+            $Source,
+            $Destination,
+            "/E",
+            "/Z",
+            "/FFT",
+            "/R:3",
+            "/W:2",
+            "/XF", $ExcludeFile,
+            "/NP",
+            "/NFL",
+            "/NDL",
+            "/NJH",
+            "/NJS"
+        )
+
+        $Process = Start-Process `
+            -FilePath "robocopy.exe" `
+            -ArgumentList $RobocopyArgs `
+            -NoNewWindow `
+            -Wait `
+            -PassThru
+
+        $ExitCode = $Process.ExitCode
+
+        # Robocopy exit codes:
+        # 0: No changes
+        # 1: Files copied successfully
+        # 2: Extra files present in destination
+        # 3: 1 + 2
+        # 4: Mismatches detected
+        # 5: 1 + 4
+        # 6: 2 + 4
+        # 7: 1 + 2 + 4
+        # >= 8: Fatal error occurred during copy
+        if ($ExitCode -ge 8) {
+            throw "Robocopy failed with exit code $ExitCode while copying from '$Source' to '$Destination'."
+        }
+
+        return
+    }
+
+    # Fallback to PowerShell Copy-Item
+    Get-ChildItem -LiteralPath $Source -Force -ErrorAction Stop |
+        Where-Object { $_.Name -ne $ExcludeFile } |
+        ForEach-Object {
+            Copy-Item `
+                -LiteralPath $_.FullName `
+                -Destination $Destination `
+                -Recurse `
+                -Force `
+                -ErrorAction Stop
+        }
+}
+
+
 function Get-ToolVersion {
     param(
         [Parameter(Mandatory = $true)]
@@ -74,11 +171,13 @@ function Recover-InterruptedUpdate {
             "WARNING"
 
         try {
-            Remove-Item `
-                -LiteralPath $Backup `
-                -Recurse `
-                -Force `
-                -ErrorAction Stop
+            Invoke-WithRetry -ScriptBlock {
+                Remove-Item `
+                    -LiteralPath $Backup `
+                    -Recurse `
+                    -Force `
+                    -ErrorAction Stop
+            } -MaxAttempts 3 -DelaySeconds 1 -ErrorMessage "Failed to remove stale backup"
 
             Write-Log `
                 "Stale backup removed for $Name." `
@@ -104,18 +203,22 @@ function Recover-InterruptedUpdate {
 
         try {
             if (Test-Path -LiteralPath $Destination) {
-                Remove-Item `
-                    -LiteralPath $Destination `
-                    -Recurse `
-                    -Force `
-                    -ErrorAction Stop
+                Invoke-WithRetry -ScriptBlock {
+                    Remove-Item `
+                        -LiteralPath $Destination `
+                        -Recurse `
+                        -Force `
+                        -ErrorAction Stop
+                } -MaxAttempts 3 -DelaySeconds 1 -ErrorMessage "Failed to clean incomplete destination"
             }
 
-            Move-Item `
-                -LiteralPath $Backup `
-                -Destination $Destination `
-                -Force `
-                -ErrorAction Stop
+            Invoke-WithRetry -ScriptBlock {
+                Move-Item `
+                    -LiteralPath $Backup `
+                    -Destination $Destination `
+                    -Force `
+                    -ErrorAction Stop
+            } -MaxAttempts 3 -DelaySeconds 1 -ErrorMessage "Failed to restore previous version from backup"
 
             Write-Log `
                 "Previous version of $Name restored successfully." `
@@ -151,7 +254,9 @@ function Update-VersionedFolder {
         [string]$Source,
 
         [Parameter(Mandatory = $true)]
-        [string]$Destination
+        [string]$Destination,
+
+        [bool]$UseRobocopy = $true
     )
 
     $VersionFileName = "version.txt"
@@ -230,22 +335,26 @@ function Update-VersionedFolder {
     $Backup = "$Destination.backup"
 
     try {
-        # Remove any old backup.
-        # At this point Recover-InterruptedUpdate has already
-        # evaluated any backup left from a previous execution.
-        Remove-Item `
-            -LiteralPath $Backup `
-            -Recurse `
-            -Force `
-            -ErrorAction SilentlyContinue
+        # Remove any old backup with retry
+        if (Test-Path -LiteralPath $Backup -PathType Container) {
+            Invoke-WithRetry -ScriptBlock {
+                Remove-Item `
+                    -LiteralPath $Backup `
+                    -Recurse `
+                    -Force `
+                    -ErrorAction Stop
+            } -MaxAttempts 3 -DelaySeconds 1 -ErrorMessage "Failed to clean old backup"
+        }
 
-        # Move current installation to backup
+        # Move current installation to backup with retry
         if (Test-Path -LiteralPath $Destination -PathType Container) {
-            Move-Item `
-                -LiteralPath $Destination `
-                -Destination $Backup `
-                -Force `
-                -ErrorAction Stop
+            Invoke-WithRetry -ScriptBlock {
+                Move-Item `
+                    -LiteralPath $Destination `
+                    -Destination $Backup `
+                    -Force `
+                    -ErrorAction Stop
+            } -MaxAttempts 3 -DelaySeconds 1 -ErrorMessage "Failed to backup current version"
         }
 
         # Create empty destination
@@ -256,22 +365,12 @@ function Update-VersionedFolder {
             -ErrorAction Stop |
             Out-Null
 
-        # Copy package content (excluding version.txt)
-        Get-ChildItem `
-            -LiteralPath $Source `
-            -Force `
-            -ErrorAction Stop |
-        Where-Object {
-            $_.Name -ne $VersionFileName
-        } |
-        ForEach-Object {
-            Copy-Item `
-                -LiteralPath $_.FullName `
-                -Destination $Destination `
-                -Recurse `
-                -Force `
-                -ErrorAction Stop
-        }
+        # Copy package content (excluding version.txt) using Robocopy / Fallback
+        Copy-PackageContent `
+            -Source $Source `
+            -Destination $Destination `
+            -ExcludeFile $VersionFileName `
+            -UseRobocopy $UseRobocopy
 
         # Copy version.txt LAST (acts as release marker)
         Copy-Item `
@@ -287,12 +386,19 @@ function Update-VersionedFolder {
             throw "Installed version does not match source version."
         }
 
-        # Commit update
-        Remove-Item `
-            -LiteralPath $Backup `
-            -Recurse `
-            -Force `
-            -ErrorAction SilentlyContinue
+        # Commit update: remove backup
+        if (Test-Path -LiteralPath $Backup -PathType Container) {
+            try {
+                Remove-Item `
+                    -LiteralPath $Backup `
+                    -Recurse `
+                    -Force `
+                    -ErrorAction SilentlyContinue
+            }
+            catch {
+                # Will be cleaned on subsequent runs
+            }
+        }
 
         Write-Log `
             "$Name updated successfully to $SourceVersion" `
@@ -312,11 +418,13 @@ function Update-VersionedFolder {
 
         if (Test-Path -LiteralPath $Backup -PathType Container) {
             try {
-                Move-Item `
-                    -LiteralPath $Backup `
-                    -Destination $Destination `
-                    -Force `
-                    -ErrorAction Stop
+                Invoke-WithRetry -ScriptBlock {
+                    Move-Item `
+                        -LiteralPath $Backup `
+                        -Destination $Destination `
+                        -Force `
+                        -ErrorAction Stop
+                } -MaxAttempts 3 -DelaySeconds 1 -ErrorMessage "Failed to restore backup"
 
                 Write-Log `
                     "Previous version of $Name restored." `
@@ -340,7 +448,9 @@ function Sync-BrainSyncRepository {
         [Parameter(Mandatory = $true)]
         [string]$DestinationRoot,
 
-        [string]$NameSuffix = ""
+        [string]$NameSuffix = "",
+
+        [bool]$UseRobocopy = $true
     )
 
     try {
@@ -360,7 +470,8 @@ function Sync-BrainSyncRepository {
             Update-VersionedFolder `
                 -Name "$ToolName$NameSuffix" `
                 -Source $Tool.FullName `
-                -Destination $Destination
+                -Destination $Destination `
+                -UseRobocopy $UseRobocopy
         }
     }
     catch {

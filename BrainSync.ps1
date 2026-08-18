@@ -21,14 +21,25 @@ function Complete-BrainSync {
 
     if ($ExitCode -eq 0) {
         Write-Log "BrainSync completed successfully."
+        if ($Script:RelevantActivity) {
+            Write-BrainSyncEventLog `
+                -Message "BrainSync completed successfully on $ComputerName with packages updated or installed." `
+                -EntryType "Information" `
+                -EventId 100
+        }
     }
     else {
         Write-Log "BrainSync completed with errors." "ERROR"
+        Write-BrainSyncEventLog `
+            -Message "BrainSync completed with errors on $ComputerName. Check log file for details." `
+            -EntryType "Error" `
+            -EventId 101
     }
 
     Write-Log "------------------------------------------------------------"
 
     Save-Log
+    Remove-OldBrainSyncLogs
     Release-BrainSyncMutex
 
     exit $ExitCode
@@ -64,7 +75,7 @@ if (-not $MutexAcquired) {
 # Main Execution Orchestration
 # ------------------------------------------------------------
 try {
-    # Initialize basic logging
+    # Initialize default logging
     $LogDirectory = Join-Path $ScriptDirectory "logs"
     Initialize-BrainSyncLogging `
         -LogDirectory $LogDirectory `
@@ -76,13 +87,20 @@ try {
         -ComputerName $ComputerName `
         -ScriptDirectory $ScriptDirectory
 
-    # Apply configuration LogMode
-    Set-BrainSyncLogMode -LogMode $ConfigContext.LogMode
+    # Apply configuration options to logging
+    Initialize-BrainSyncLogging `
+        -LogDirectory $LogDirectory `
+        -ComputerName $ComputerName `
+        -LogMode $ConfigContext.LogMode `
+        -LogRetentionDays $ConfigContext.LogRetentionDays `
+        -EnableEventLog $ConfigContext.EnableEventLog
 
     Write-Log "------------------------------------------------------------"
     Write-Log "BrainSync started - $ComputerName"
     Write-Log "Config: $($ConfigContext.ResolvedConfigPath)"
     Write-Log "Log mode: $($ConfigContext.LogMode)"
+    Write-Log "Robocopy enabled: $($ConfigContext.UseRobocopy)"
+    Write-Log "Log retention: $($ConfigContext.LogRetentionDays) days"
 
     # --------------------------------------------------------
     # STEP 1: Refresh local repository from upstream
@@ -93,7 +111,8 @@ try {
         Sync-BrainSyncRepository `
             -SourceRepository $ConfigContext.UpstreamSource `
             -DestinationRoot $ConfigContext.LocalRepository `
-            -NameSuffix " source"
+            -NameSuffix " source" `
+            -UseRobocopy $ConfigContext.UseRobocopy
     }
     else {
         Write-Log "No upstream source configured. Using local repository."
@@ -106,7 +125,8 @@ try {
 
     Sync-BrainSyncRepository `
         -SourceRepository $ConfigContext.LocalRepository `
-        -DestinationRoot $ConfigContext.DestinationRoot
+        -DestinationRoot $ConfigContext.DestinationRoot `
+        -UseRobocopy $ConfigContext.UseRobocopy
 
     # --------------------------------------------------------
     # Finish

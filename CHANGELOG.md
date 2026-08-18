@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Added high-performance and network-resilient package copying powered by `Robocopy.exe` with automatic restartable mode (`/Z`), network timestamp tolerance (`/FFT`), retry policies (`/R:3 /W:2`), and seamless fallback to `Copy-Item`.
+- Added transient file-lock tolerance with exponential/pause retry policies (`Invoke-WithRetry`) for backup and restore operations during live deployments.
+- Added automatic log retention and purge mechanism (`LogRetentionDays`, default 30 days) to prevent unbounded log growth.
+- Added Windows Event Log integration (`Application` log, Source `BrainSync`) emitting events for successful package updates (`EventID 100`) and fatal errors (`EventID 101`).
+- Added configuration support in `configs/*.json` for `UseRobocopy`, `LogRetentionDays`, and `EnableEventLog` with machine-level override capability.
 - Modularized BrainSync into dedicated components under `src/`: [Logging.ps1](src/Logging.ps1), [Mutex.ps1](src/Mutex.ps1), [Config.ps1](src/Config.ps1), and [Sync.ps1](src/Sync.ps1), while keeping [BrainSync.ps1](BrainSync.ps1) as the concise entrypoint orchestrator.
 - Added automatic recovery for interrupted updates left incomplete by process termination, system restart, or power loss.
 - BrainSync now detects incomplete destinations with an existing backup and restores the previous valid release automatically.
