@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Added automatic recovery for interrupted updates left incomplete by process termination, system restart, or power loss.
+- BrainSync now detects incomplete destinations with an existing backup and restores the previous valid release automatically.
+- Added stale backup cleanup when a previous update completed successfully but terminated before backup removal.
+- Added validation to prevent automatic recovery when neither the destination nor backup contains a valid release marker.
 - Added configurable logging modes through the `LogMode` environment setting.
 - Added `ChangesOnly` logging mode to persist logs only when an install, update, warning, or error occurs.
 - Added `All` logging mode for verbose execution logging, primarily intended for lab testing and troubleshooting.

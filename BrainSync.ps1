@@ -8,6 +8,8 @@ $Script:RelevantActivity = $false
 $Script:LogFile = $null
 $Script:LogMode = "ChangesOnly"
 $Script:LogBuffer = [System.Collections.Generic.List[string]]::new()
+$Script:Mutex = $null
+$Script:MutexAcquired = $false
 
 
 function Write-Log {
@@ -39,6 +41,7 @@ function Write-Log {
 
 
 function Save-Log {
+
     $ShouldWrite = (
         $Script:LogMode -eq "All" -or
         $Script:RelevantActivity
@@ -58,6 +61,28 @@ function Save-Log {
 }
 
 
+function Release-BrainSyncMutex {
+
+    if ($Script:MutexAcquired -and $Script:Mutex) {
+
+        try {
+            $Script:Mutex.ReleaseMutex()
+        }
+        catch {
+            # Nothing else to do here.
+        }
+
+        $Script:MutexAcquired = $false
+    }
+
+    if ($Script:Mutex) {
+
+        $Script:Mutex.Dispose()
+        $Script:Mutex = $null
+    }
+}
+
+
 function Complete-BrainSync {
     param(
         [int]$ExitCode
@@ -73,6 +98,7 @@ function Complete-BrainSync {
     Write-Log "------------------------------------------------------------"
 
     Save-Log
+    Release-BrainSyncMutex
 
     exit $ExitCode
 }
@@ -147,6 +173,107 @@ function Get-VersionedFolders {
 }
 
 
+function Recover-InterruptedUpdate {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Destination
+    )
+
+    $Backup = "$Destination.backup"
+
+    if (-not (Test-Path -LiteralPath $Backup -PathType Container)) {
+        return $true
+    }
+
+    $DestinationVersion = Get-ToolVersion -Path $Destination
+    $BackupVersion = Get-ToolVersion -Path $Backup
+
+    # Destination contains a valid release marker.
+    # The previous update completed, but BrainSync terminated
+    # before it could remove the backup.
+    if (-not [string]::IsNullOrWhiteSpace($DestinationVersion)) {
+
+        Write-Log `
+            "Stale backup detected for $Name. Destination version $DestinationVersion is complete." `
+            "WARNING"
+
+        try {
+
+            Remove-Item `
+                -LiteralPath $Backup `
+                -Recurse `
+                -Force `
+                -ErrorAction Stop
+
+            Write-Log `
+                "Stale backup removed for $Name." `
+                -Relevant
+
+            return $true
+        }
+        catch {
+
+            Write-Log `
+                "Failed to remove stale backup for $Name`: $($_.Exception.Message)" `
+                "ERROR"
+
+            return $false
+        }
+    }
+
+    # Destination is incomplete. Restore the previous valid version.
+    if (-not [string]::IsNullOrWhiteSpace($BackupVersion)) {
+
+        Write-Log `
+            "Interrupted update detected for $Name. Restoring previous version $BackupVersion." `
+            "WARNING"
+
+        try {
+
+            if (Test-Path -LiteralPath $Destination) {
+
+                Remove-Item `
+                    -LiteralPath $Destination `
+                    -Recurse `
+                    -Force `
+                    -ErrorAction Stop
+            }
+
+            Move-Item `
+                -LiteralPath $Backup `
+                -Destination $Destination `
+                -Force `
+                -ErrorAction Stop
+
+            Write-Log `
+                "Previous version of $Name restored successfully." `
+                -Relevant
+
+            return $true
+        }
+        catch {
+
+            Write-Log `
+                "Failed to recover interrupted update for $Name`: $($_.Exception.Message)" `
+                "ERROR"
+
+            return $false
+        }
+    }
+
+    # Neither destination nor backup contains a valid release marker.
+    # Do not remove either one automatically.
+    Write-Log `
+        "Unable to recover $Name. Both destination and backup are missing a valid version.txt." `
+        "ERROR"
+
+    return $false
+}
+
+
 function Update-VersionedFolder {
     param(
         [Parameter(Mandatory = $true)]
@@ -160,6 +287,23 @@ function Update-VersionedFolder {
     )
 
     $VersionFileName = "version.txt"
+
+    # --------------------------------------------------------
+    # Recover any interrupted previous update first
+    # --------------------------------------------------------
+
+    $RecoverySucceeded = Recover-InterruptedUpdate `
+        -Name $Name `
+        -Destination $Destination
+
+    if (-not $RecoverySucceeded) {
+        return
+    }
+
+
+    # --------------------------------------------------------
+    # Validate source
+    # --------------------------------------------------------
 
     if (-not (Test-Path -LiteralPath $Source -PathType Container)) {
         Write-Log "Source folder not found: $Source" "ERROR"
@@ -187,6 +331,11 @@ function Update-VersionedFolder {
         return
     }
 
+
+    # --------------------------------------------------------
+    # Validate source/destination paths
+    # --------------------------------------------------------
+
     $SourceFullPath = [System.IO.Path]::GetFullPath($Source)
     $DestinationFullPath = [System.IO.Path]::GetFullPath($Destination)
 
@@ -194,16 +343,27 @@ function Update-VersionedFolder {
         $SourceFullPath.TrimEnd('\') -eq
         $DestinationFullPath.TrimEnd('\')
     ) {
+
         Write-Log `
             "Source and destination are the same path for $Name`: $Source" `
             "ERROR"
+
         return
     }
 
+
+    # --------------------------------------------------------
+    # Begin update
+    # --------------------------------------------------------
+
     if ([string]::IsNullOrWhiteSpace($DestinationVersion)) {
-        Write-Log "Installing $Name version $SourceVersion" -Relevant
+
+        Write-Log `
+            "Installing $Name version $SourceVersion" `
+            -Relevant
     }
     else {
+
         Write-Log `
             "Updating $Name`: $DestinationVersion -> $SourceVersion" `
             -Relevant
@@ -211,22 +371,30 @@ function Update-VersionedFolder {
 
     $Backup = "$Destination.backup"
 
-    Remove-Item `
-        -LiteralPath $Backup `
-        -Recurse `
-        -Force `
-        -ErrorAction SilentlyContinue
-
     try {
 
+        # Remove any old backup.
+        # At this point Recover-InterruptedUpdate has already
+        # evaluated any backup left from a previous execution.
+        Remove-Item `
+            -LiteralPath $Backup `
+            -Recurse `
+            -Force `
+            -ErrorAction SilentlyContinue
+
+
+        # Move current installation to backup
         if (Test-Path -LiteralPath $Destination -PathType Container) {
 
-            Rename-Item `
+            Move-Item `
                 -LiteralPath $Destination `
-                -NewName $Backup `
+                -Destination $Backup `
+                -Force `
                 -ErrorAction Stop
         }
 
+
+        # Create empty destination
         New-Item `
             -ItemType Directory `
             -Path $Destination `
@@ -234,8 +402,12 @@ function Update-VersionedFolder {
             -ErrorAction Stop |
             Out-Null
 
-        # Copy all package content except version.txt.
-        # version.txt is copied last and acts as the completed-release marker.
+
+        # ----------------------------------------------------
+        # Copy package content
+        # version.txt is deliberately excluded
+        # ----------------------------------------------------
+
         Get-ChildItem `
             -LiteralPath $Source `
             -Force `
@@ -253,18 +425,35 @@ function Update-VersionedFolder {
                 -ErrorAction Stop
         }
 
-        # Copy release marker last
+
+        # ----------------------------------------------------
+        # Copy version.txt LAST
+        #
+        # Once this file exists with the expected value,
+        # the destination is considered a complete release.
+        # ----------------------------------------------------
+
         Copy-Item `
             -LiteralPath $SourceVersionFile `
             -Destination (Join-Path $Destination $VersionFileName) `
             -Force `
             -ErrorAction Stop
 
+
+        # ----------------------------------------------------
+        # Validate installed release
+        # ----------------------------------------------------
+
         $InstalledVersion = Get-ToolVersion -Path $Destination
 
         if ($InstalledVersion -ne $SourceVersion) {
             throw "Installed version does not match source version."
         }
+
+
+        # ----------------------------------------------------
+        # Commit update
+        # ----------------------------------------------------
 
         Remove-Item `
             -LiteralPath $Backup `
@@ -282,6 +471,11 @@ function Update-VersionedFolder {
             "Update failed for $Name`: $($_.Exception.Message)" `
             "ERROR"
 
+
+        # ----------------------------------------------------
+        # Immediate rollback
+        # ----------------------------------------------------
+
         Remove-Item `
             -LiteralPath $Destination `
             -Recurse `
@@ -292,9 +486,10 @@ function Update-VersionedFolder {
 
             try {
 
-                Rename-Item `
+                Move-Item `
                     -LiteralPath $Backup `
-                    -NewName $Destination `
+                    -Destination $Destination `
+                    -Force `
                     -ErrorAction Stop
 
                 Write-Log `
@@ -404,6 +599,50 @@ $ComputerConfig = $config.Computers.$ComputerName
 
 if ($null -eq $ComputerConfig) {
     throw "No BrainSync configuration found for computer: $ComputerName"
+}
+
+
+# ------------------------------------------------------------
+# Acquire single-instance mutex
+# ------------------------------------------------------------
+
+$MutexName = "Global\BrainSync_$ComputerName"
+
+try {
+
+    $Script:Mutex = [System.Threading.Mutex]::new(
+        $false,
+        $MutexName
+    )
+
+    try {
+
+        $Script:MutexAcquired = $Script:Mutex.WaitOne(0)
+    }
+    catch [System.Threading.AbandonedMutexException] {
+
+        # Previous BrainSync process terminated unexpectedly.
+        # Windows grants this execution ownership of the mutex.
+        $Script:MutexAcquired = $true
+    }
+
+    if (-not $Script:MutexAcquired) {
+
+        Write-Host "BrainSync is already running on $ComputerName. Exiting."
+
+        $Script:Mutex.Dispose()
+        $Script:Mutex = $null
+
+        exit 0
+    }
+}
+catch {
+
+    if ($Script:Mutex) {
+        $Script:Mutex.Dispose()
+    }
+
+    throw "Failed to create BrainSync mutex: $($_.Exception.Message)"
 }
 
 
